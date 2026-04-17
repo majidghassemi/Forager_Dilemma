@@ -722,7 +722,7 @@ def make_plots(R, od="plots/v3"):
 # ═══════════════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
     t0 = time.time()
-    R = run_all(N=100, seed=42)
+    R = run_all(N=50000, seed=42)
     od = make_plots(R)
     elapsed = time.time() - t0
     print(f"\nTotal runtime: {elapsed:.0f}s")
