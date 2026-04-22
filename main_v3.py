@@ -486,11 +486,11 @@ CL = {"baseline": "#E66100", "hardcoded": "#999999",
       "emergent": "#5D3A9B", "full": "#1B7837", "collusion": "#D62728"}
 
 # Updated Nomenclature
-LB = {"baseline": "Proxy Reward",
-      "hardcoded": "Omniscient Sanctions",
-      "emergent": "Decentralised Peer Feedback",
-      "full": "SoFI",
-      "collusion": "Adversarial Coalition"}
+LB = {"baseline": "SRB", # Static Reward Baseline
+      "hardcoded": "ES", # Exogenous Sanctions
+      "emergent": "DPF", # Decentralised Peer Feedback
+      "full": "DERL (Ours)", # Dual-Enforcement Reinforcement Learning
+      "collusion": "AC"} # Adversarial Coalition
 
 ST = {"baseline": dict(ls="--", lw=2.2),
       "hardcoded": dict(ls=":", lw=2),
@@ -744,3 +744,20 @@ if __name__ == "__main__":
         print(f"  {c:<16} " +
               " ".join(f"{v:>5.3f}" for v in vals) +
               f"  {np.mean(d['res'][s]):>5.1f} res")
+        
+
+
+
+
+"""Total runtime: 14411s
+
+==========================================================================================
+  SUMMARY (last 100 episodes)
+==========================================================================================
+  Condition          T r u t h         L i e       G a t h       M i n e       P u n       V e r     C o o p     O r a c       R e p
+  ----------------------------------------------------------------------------------
+  baseline         0.006 0.864 0.006 0.067 0.005 0.005 0.000 0.192 7.480    5.9 res
+  hardcoded        0.017 0.005 0.863 0.006 0.005 0.005 0.000 0.567 0.098    7.8 res
+  emergent         0.275 0.165 0.115 0.076 0.048 0.044 0.034 0.612 3.018    5.3 res
+  full             0.170 0.005 0.755 0.006 0.008 0.005 0.269 0.883 0.060    7.8 res
+  collusion        0.272 0.084 0.041 0.105 0.052 0.061 0.004 0.597 3.820    4.5 res"""
