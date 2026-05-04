@@ -684,7 +684,7 @@ def make_plots(R, od="plots/v3"):
                edgecolor="white", linewidth=0.5)
     ax.set_xticks(x)
     ax.set_xticklabels(mls)
-    ax.set(ylabel="Rate (last 100 ep)",
+    ax.set(ylabel="Rate (last 500 ep)",
            title="Fig 9: Ablation - Punishment Profitability")
     ax.legend(fontsize=8, ncol=2)
     fig.tight_layout()
