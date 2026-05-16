@@ -23,6 +23,7 @@ build/
 # Logs
 *.log
 logs/
+checkpoints/
 
 # OS
 Thumbs.db
