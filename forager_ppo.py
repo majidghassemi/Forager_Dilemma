@@ -2,10 +2,9 @@
 Forager's Dilemma — PPO Expansion
 ===================================
 Deep-RL validation of the DERL mechanism from the paper using:
-  • PettingZoo ParallelEnv  wrapper around the original Env class
-  • Independent PPO (IPPO)  — one ActorCritic per agent, mirrors Q-tables
-  • Same 5 governance conditions + punishment-profitability ablation
-  • Same 10 figures, saved to plots/v4_ppo/
+  • PettingZoo ParallelEnv wrapper around the original Env class
+  • Independent PPO (IPPO) — one ActorCritic per agent, mirrors Q-tables
+  • Same 5 governance conditions, 9 figures saved to plots/v4_ppo/
 
 Run:  conda run -n forager python forager_ppo.py
       conda run -n forager python forager_ppo.py --episodes 50000 --device cuda
@@ -32,7 +31,6 @@ PUNISH, VERIFY = 8, 9
 N_ACT = 10
 DELTAS = np.array([[-1,0],[1,0],[0,-1],[0,1],
                    [0,0],[0,0],[0,0],[0,0],[0,0],[0,0]])
-ACT_NAMES = ["↑","↓","←","→","Gather","Mine","SigT","SigL","Punish","Verify"]
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -521,14 +519,9 @@ def train_ppo(env_kw, n_ep=500, seed=42, verbose=True,
 # ═══════════════════════════════════════════════════════════════════════════
 # EXPERIMENT SUITE
 # ═══════════════════════════════════════════════════════════════════════════
-def run_all(N=500, seeds=None, device="cpu", checkpoint_dir="checkpoints",
-            abl_N=None, abl_device=None):
+def run_all(N=500, seeds=None, device="cpu", checkpoint_dir="checkpoints"):
     if seeds is None:
         seeds = [42, 43, 44, 45, 46]
-    if abl_N is None:
-        abl_N = N
-    if abl_device is None:
-        abl_device = device
 
     checkpoint_dir = os.path.abspath(checkpoint_dir)
     os.makedirs(checkpoint_dir, exist_ok=True)
@@ -574,45 +567,6 @@ def run_all(N=500, seeds=None, device="cpu", checkpoint_dir="checkpoints",
             agg_R[k] = np.vstack([res[k] for res in seed_results])
         R[nm] = agg_R
 
-    # Punishment-profitability ablation (3 seeds sufficient for bar chart)
-    abl_seeds = seeds[:3]
-    print(f"\n{'='*65}")
-    print(f"  ABLATION: punish_reward  ({len(abl_seeds)} seeds)")
-    print(f"{'='*65}")
-    abl_pr = {}
-    for pr in [0.0, 0.5, 1.5, 3.0]:
-        print(f"\n  pun_rew={pr}")
-        seed_results = []
-        for s in abl_seeds:
-            ckpt = os.path.join(checkpoint_dir, f"abl_pr{pr}_seed{s}.npz")
-            if os.path.exists(ckpt):
-                print(f"  Seed {s}: loading checkpoint")
-                data = np.load(ckpt)
-                seed_results.append({k: data[k] for k in data.files})
-            else:
-                print(f"  Seed {s}: training...")
-                res = train_ppo(
-                    dict(use_hardcoded=False, use_emergent=True, use_intrinsic=False,
-                         coop_bonus=1.5, punish_reward=pr),
-                    n_ep=abl_N, seed=s, verbose=True, device=abl_device)
-                np.savez(ckpt, **res)
-                print(f"  Seed {s}: checkpoint saved")
-                seed_results.append(res)
-                gc.collect()
-
-        agg_abl = {}
-        for k in seed_results[0].keys():
-            agg_abl[k] = np.vstack([res[k] for res in seed_results])
-        abl_pr[pr] = agg_abl
-
-        s_slice = slice(-max(1, N // 5), None)
-        print(f"T={np.mean(abl_pr[pr]['truth'][:, s_slice]):.3f}  "
-              f"L={np.mean(abl_pr[pr]['lie'][:, s_slice]):.3f}  "
-              f"G={np.mean(abl_pr[pr]['gather'][:, s_slice]):.3f}  "
-              f"M={np.mean(abl_pr[pr]['mine'][:, s_slice]):.3f}  "
-              f"P={np.mean(abl_pr[pr]['punish'][:, s_slice]):.3f}")
-
-    R["abl_pr"] = abl_pr
     return R
 
 
@@ -769,34 +723,7 @@ def make_plots(R, od="plots/v4_ppo"):
            "Fig 8: Resource Sustainability (PPO)", "Active Resources",
            "fig08_resources", ylim=(0, mx * 1.2))
 
-    # ── Fig 9: Ablation — Punishment Profitability ────────────────────
-    sty()
-    abl  = R["abl_pr"]
-    keys = sorted(abl.keys())
-    mets = ["truth", "gather", "lie", "mine", "punish"]
-    mls  = ["Truth ↑", "Gather ↑", "Lie ↓", "Mine ↓", "Punish"]
-    fig, ax = plt.subplots(figsize=(9, 4.5))
-    x  = np.arange(len(mets))
-    bw = 0.18
-    cm = plt.cm.viridis
-    n_last = max(1, abl[keys[0]]["truth"].shape[1] // 5)
-    for i, k in enumerate(keys):
-        vals = [np.mean(abl[k][m][:, -n_last:]) for m in mets]
-        ax.bar(x + (i - len(keys) / 2 + 0.5) * bw, vals, bw,
-               label=f"pun_rew={k}",
-               color=cm(i / (len(keys) - 1)),
-               edgecolor="white", linewidth=0.5)
-    ax.set_xticks(x)
-    ax.set_xticklabels(mls)
-    ax.set(ylabel=f"Rate (last {n_last} ep)",
-           title="Fig 9: Ablation — Punishment Profitability (PPO)")
-    ax.legend(fontsize=8, ncol=2)
-    fig.tight_layout()
-    for e in ["pdf", "png"]:
-        fig.savefig(f"fig09_ablation_punish.{e}", format=e, bbox_inches="tight", dpi=300)
-    plt.close(fig)
-
-    # ── Fig 10: Adversarial Coalition Robustness ──────────────────────
+    # ── Fig 9: Adversarial Coalition Robustness ───────────────────────
     sty()
     fig, axes = plt.subplots(1, 3, figsize=(14, 4))
     n_last = max(1, R["DPF"]["truth"].shape[1] // 5)
@@ -830,15 +757,15 @@ def make_plots(R, od="plots/v4_ppo"):
                 ylabel="Accuracy", ylim=(-0.02, 1.05))
     axes[2].legend(fontsize=8)
 
-    fig.suptitle("Fig 10: Adversarial Coalition Robustness (PPO, Cartel = Agents 0,1)",
+    fig.suptitle("Fig 9: Adversarial Coalition Robustness (PPO, Cartel = Agents 0,1)",
                  fontsize=13, y=1.02)
     fig.tight_layout()
     for e in ["pdf", "png"]:
-        fig.savefig(f"fig10_collusion.{e}", format=e, bbox_inches="tight", dpi=300)
+        fig.savefig(f"fig09_collusion.{e}", format=e, bbox_inches="tight", dpi=300)
     plt.close(fig)
 
     os.chdir(orig_dir)
-    print(f"\n✓ 10 figures (PDF + PNG) → {od}/")
+    print(f"\n✓ 9 figures (PDF + PNG) → {od}/")
     return od
 
 
@@ -848,22 +775,16 @@ def make_plots(R, od="plots/v4_ppo"):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--episodes",     type=int, default=50_000)
-    parser.add_argument("--seeds",        type=int, nargs="+", default=[42, 43, 44, 45, 46])
-    parser.add_argument("--device",       type=str, default="cpu")
-    parser.add_argument("--outdir",       type=str, default="plots/v4_ppo")
-    parser.add_argument("--checkpoint-dir", type=str, default="checkpoints",
-                        help="Directory to save/load per-seed results")
-    parser.add_argument("--abl-episodes", type=int, default=None,
-                        help="Episodes for ablation runs (default: same as --episodes)")
-    parser.add_argument("--abl-device",   type=str, default=None,
-                        help="Device for ablation runs (default: same as --device)")
+    parser.add_argument("--episodes",       type=int, default=50_000)
+    parser.add_argument("--seeds",          type=int, nargs="+", default=[42, 43, 44, 45, 46])
+    parser.add_argument("--device",         type=str, default="cpu")
+    parser.add_argument("--outdir",         type=str, default="plots/v4_ppo")
+    parser.add_argument("--checkpoint-dir", type=str, default="checkpoints")
     args = parser.parse_args()
 
     t0 = time.time()
     R  = run_all(N=args.episodes, seeds=args.seeds, device=args.device,
-                 checkpoint_dir=args.checkpoint_dir,
-                 abl_N=args.abl_episodes, abl_device=args.abl_device)
+                 checkpoint_dir=args.checkpoint_dir)
     make_plots(R, od=args.outdir)
     elapsed = time.time() - t0
     print(f"\nTotal runtime: {elapsed:.0f}s  ({elapsed/3600:.2f}h)")
