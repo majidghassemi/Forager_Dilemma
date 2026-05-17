@@ -229,23 +229,34 @@ class Env:
         return self._sid(), rew.astype(np.float32), self.t >= self.T, info
 
     def _sid(self):
-        ids = np.zeros(self.na, int)
-        pb  = (self.prev == MINE) | (self.prev == SIG_L)
+        # Convert all arrays to Python lists first to avoid NumPy ABI issues
+        # on Python 3.14 where ufunc dispatch and STORE_SUBSCR can segfault.
+        pos    = self.pos.tolist()
+        rpos   = self.rpos.tolist()
+        active = self.active.tolist()
+        prev   = self.prev.tolist()
+        rep    = self.reputation.tolist()
+        brd    = self.brd.tolist()
+
+        pb         = [(p == MINE or p == SIG_L) for p in prev]
+        brd_active = int(any(row[0] >= 0 for row in brd))
+        dep        = int(sum(1 for a in active if a) < self.nr * 0.5)
+
+        ids = []
         for i in range(self.na):
-            d    = np.sum(np.abs(self.rpos - self.pos[i]), 1)
-            nr   = int(np.any((d <= 1) & self.active))
-            _pd  = np.sum(np.abs(self.pos - self.pos[i]), 1)
-            _pd[i] = 999
-            peer = int(np.any(_pd <= self.obs_r))
-            bad  = int(np.any((_pd <= self.obs_r) & pb))
-            brd  = int(np.any(self.brd[:, 0] >= 0))
-            dep  = int(self.active.sum() < self.nr * 0.5)
-            watchers = np.any(_pd <= self.obs_r)
-            my_rep   = int(watchers and self.reputation[i] >= 2)
-            in_cartel= int(i in self.cartel_set)
-            ids[i]   = (nr + 2*peer + 4*bad + 8*brd +
-                        16*dep + 32*my_rep + 64*in_cartel)
-        return ids
+            pi    = pos[i]
+            d_res = [abs(r[0] - pi[0]) + abs(r[1] - pi[1]) for r in rpos]
+            nr    = int(any(d <= 1 and a for d, a in zip(d_res, active)))
+
+            d_peers = [(abs(pos[j][0] - pi[0]) + abs(pos[j][1] - pi[1]), pb[j])
+                       for j in range(self.na) if j != i]
+            peer    = int(any(d <= self.obs_r for d, _ in d_peers))
+            bad     = int(any(d <= self.obs_r and b for d, b in d_peers))
+            my_rep  = int(peer and rep[i] >= 2)
+            in_cartel = int(i in self.cartel_set)
+            ids.append(nr + 2*peer + 4*bad + 8*brd_active +
+                       16*dep + 32*my_rep + 64*in_cartel)
+        return np.array(ids, dtype=int)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -386,15 +397,16 @@ def train_ppo(env_kw, n_ep=500, seed=42, verbose=True,
             rews_t = torch.tensor(np.array(buf_rews[i]),  dtype=torch.float32, device=dev)
             done_t = torch.tensor(np.array(buf_dones[i]), dtype=torch.float32, device=dev)
 
-            # GAE advantages
+            # GAE advantages — keep last_gae as a Python float to avoid
+            # tensor shape accumulation errors over many rollout updates.
             n_steps  = len(rews_t)
             adv      = torch.zeros(n_steps, device=dev)
             last_gae = 0.0
             for t in reversed(range(n_steps)):
-                next_val = 0.0 if done_t[t] else \
-                           (vals_t[t + 1].item() if t + 1 < n_steps else 0.0)
-                delta    = rews_t[t] + gamma * next_val * (1 - done_t[t]) - vals_t[t]
-                last_gae = delta + gamma * gae_lambda * (1 - done_t[t]) * last_gae
+                d_t      = done_t[t].item()
+                nv       = 0.0 if d_t else (vals_t[t + 1].item() if t + 1 < n_steps else 0.0)
+                delta    = rews_t[t].item() + gamma * nv * (1.0 - d_t) - vals_t[t].item()
+                last_gae = delta + gamma * gae_lambda * (1.0 - d_t) * last_gae
                 adv[t]   = last_gae
             returns = adv + vals_t
             adv     = (adv - adv.mean()) / (adv.std() + 1e-8)
@@ -497,6 +509,8 @@ def train_ppo(env_kw, n_ep=500, seed=42, verbose=True,
         flush_and_update()
 
     result = {k: np.array(v) for k, v in H.items()}
+    if device != "cpu":
+        torch.cuda.synchronize()
     del nets, opts, pz_env, buf_obs, buf_acts, buf_logps, buf_vals, buf_rews, buf_dones
     gc.collect()
     if device != "cpu":
@@ -507,9 +521,14 @@ def train_ppo(env_kw, n_ep=500, seed=42, verbose=True,
 # ═══════════════════════════════════════════════════════════════════════════
 # EXPERIMENT SUITE
 # ═══════════════════════════════════════════════════════════════════════════
-def run_all(N=500, seeds=None, device="cpu", checkpoint_dir="checkpoints"):
+def run_all(N=500, seeds=None, device="cpu", checkpoint_dir="checkpoints",
+            abl_N=None, abl_device=None):
     if seeds is None:
         seeds = [42, 43, 44, 45, 46]
+    if abl_N is None:
+        abl_N = N
+    if abl_device is None:
+        abl_device = device
 
     checkpoint_dir = os.path.abspath(checkpoint_dir)
     os.makedirs(checkpoint_dir, exist_ok=True)
@@ -555,25 +574,29 @@ def run_all(N=500, seeds=None, device="cpu", checkpoint_dir="checkpoints"):
             agg_R[k] = np.vstack([res[k] for res in seed_results])
         R[nm] = agg_R
 
-    # Punishment-profitability ablation
+    # Punishment-profitability ablation (3 seeds sufficient for bar chart)
+    abl_seeds = seeds[:3]
     print(f"\n{'='*65}")
-    print(f"  ABLATION: punish_reward")
+    print(f"  ABLATION: punish_reward  ({len(abl_seeds)} seeds)")
     print(f"{'='*65}")
     abl_pr = {}
     for pr in [0.0, 0.5, 1.5, 3.0]:
-        print(f"  pun_rew={pr}...", end=" ", flush=True)
+        print(f"\n  pun_rew={pr}")
         seed_results = []
-        for s in seeds:
+        for s in abl_seeds:
             ckpt = os.path.join(checkpoint_dir, f"abl_pr{pr}_seed{s}.npz")
             if os.path.exists(ckpt):
+                print(f"  Seed {s}: loading checkpoint")
                 data = np.load(ckpt)
                 seed_results.append({k: data[k] for k in data.files})
             else:
+                print(f"  Seed {s}: training...")
                 res = train_ppo(
                     dict(use_hardcoded=False, use_emergent=True, use_intrinsic=False,
                          coop_bonus=1.5, punish_reward=pr),
-                    n_ep=N, seed=s, verbose=False, device=device)
+                    n_ep=abl_N, seed=s, verbose=True, device=abl_device)
                 np.savez(ckpt, **res)
+                print(f"  Seed {s}: checkpoint saved")
                 seed_results.append(res)
                 gc.collect()
 
@@ -825,17 +848,22 @@ def make_plots(R, od="plots/v4_ppo"):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--episodes", type=int, default=50_000)
-    parser.add_argument("--seeds",    type=int, nargs="+", default=[42, 43, 44, 45, 46])
-    parser.add_argument("--device",   type=str, default="cpu")
-    parser.add_argument("--outdir",      type=str, default="plots/v4_ppo")
+    parser.add_argument("--episodes",     type=int, default=50_000)
+    parser.add_argument("--seeds",        type=int, nargs="+", default=[42, 43, 44, 45, 46])
+    parser.add_argument("--device",       type=str, default="cpu")
+    parser.add_argument("--outdir",       type=str, default="plots/v4_ppo")
     parser.add_argument("--checkpoint-dir", type=str, default="checkpoints",
                         help="Directory to save/load per-seed results")
+    parser.add_argument("--abl-episodes", type=int, default=None,
+                        help="Episodes for ablation runs (default: same as --episodes)")
+    parser.add_argument("--abl-device",   type=str, default=None,
+                        help="Device for ablation runs (default: same as --device)")
     args = parser.parse_args()
 
     t0 = time.time()
     R  = run_all(N=args.episodes, seeds=args.seeds, device=args.device,
-                 checkpoint_dir=args.checkpoint_dir)
+                 checkpoint_dir=args.checkpoint_dir,
+                 abl_N=args.abl_episodes, abl_device=args.abl_device)
     make_plots(R, od=args.outdir)
     elapsed = time.time() - t0
     print(f"\nTotal runtime: {elapsed:.0f}s  ({elapsed/3600:.2f}h)")
