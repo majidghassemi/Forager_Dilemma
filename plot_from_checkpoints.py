@@ -18,11 +18,11 @@ MC         = ["SRB", "ES", "DPF", "DERL"]
 
 CL = {"SRB": "#E66100", "ES": "#999999",
       "DPF": "#5D3A9B", "DERL": "#1B7837", "AC": "#D62728"}
-LB = {"SRB":  "Scalar Reward Baseline",
-      "ES":   "Exogenous Sanctions",
-      "DPF":  "Decentralised Peer Feedback",
+LB = {"SRB":  "SRB",
+      "ES":   "ES",
+      "DPF":  "DPF",
       "DERL": "DERL (Ours)",
-      "AC":   "Adversarial Coalition"}
+      "AC":   "AC"}
 ST = {"SRB":  dict(ls="--", lw=2.2),
       "ES":   dict(ls=":",  lw=2),
       "DPF":  dict(ls="-.", lw=2),
@@ -61,14 +61,14 @@ def plot_with_fill(ax, data, label, color, **kwargs):
     ax.fill_between(eps, mean - std, mean + std, color=color, alpha=0.15, lw=0)
 
 
-def _curve(R, key, title, ylabel, fname, conds=None, ylim=None):
+def _curve(R, key, ylabel, fname, conds=None, ylim=None):
     sty()
     fig, ax = plt.subplots(figsize=(6.5, 4))
     for c in (conds or MC):
         if c in R:
             plot_with_fill(ax, R[c][key], label=LB.get(c, c),
                            color=CL.get(c, "#000"), **ST.get(c, dict(lw=1.5)))
-    ax.set(title=title, xlabel="Episode", ylabel=ylabel)
+    ax.set(xlabel="Episode", ylabel=ylabel)
     if ylim:
         ax.set_ylim(ylim)
     ax.legend(framealpha=0.9)
@@ -122,10 +122,10 @@ def make_plots(R, od):
     os.chdir(od)
     n_saved = 0
 
-    _curve(R, "truth",  "Fig 1: Epistemic Integrity (PPO)",  "Truth Rate",  "fig01_epistemic",     ylim=(-0.02, 0.65))
-    _curve(R, "gather", "Fig 2: Ethical Integrity (PPO)",    "Gather Rate", "fig02_ethical",        ylim=(-0.02, 1.0))
-    _curve(R, "lie",    "Fig 3: Hallucination Rate (PPO)",   "Lie Rate",    "fig03_hallucination",  ylim=(-0.02, 1.0))
-    _curve(R, "mine",   "Fig 4: Moral Drift (PPO)",          "Mine Rate",   "fig04_moral_drift",    ylim=(-0.02, 0.5))
+    _curve(R, "truth",  "Truth Rate",  "fig01_epistemic",    ylim=(-0.02, 0.65))
+    _curve(R, "gather", "Gather Rate", "fig02_ethical",       ylim=(-0.02, 1.0))
+    _curve(R, "lie",    "Lie Rate",    "fig03_hallucination", ylim=(-0.02, 1.0))
+    _curve(R, "mine",   "Mine Rate",   "fig04_moral_drift",   ylim=(-0.02, 0.5))
     n_saved += 4
 
     # Fig 5
@@ -137,12 +137,11 @@ def make_plots(R, od):
         plot_with_fill(axes[0], R[c]["punish"],   label=LB[c], color=CL[c], **ST[c])
         plot_with_fill(axes[1], R[c]["verify"],   label=LB[c], color=CL[c], **ST[c])
         plot_with_fill(axes[2], R[c]["mean_rep"], label=LB[c], color=CL[c], **ST[c])
-    axes[0].set(title="Punishment Rate",       xlabel="Episode", ylabel="Rate")
-    axes[1].set(title="Verification Rate",     xlabel="Episode")
-    axes[2].set(title="Mean Reputation Score", xlabel="Episode", ylabel="Score")
+    axes[0].set(xlabel="Episode", ylabel="Punishment Rate")
+    axes[1].set(xlabel="Episode", ylabel="Verification Rate")
+    axes[2].set(xlabel="Episode", ylabel="Mean Reputation Score")
     for a in axes:
         a.legend(fontsize=7)
-    fig.suptitle("Fig 5: Emergent Social Dynamics (PPO)", fontsize=13, y=1.01)
     fig.tight_layout()
     for e in ["pdf", "png"]:
         fig.savefig(f"fig05_social.{e}", format=e, bbox_inches="tight", dpi=300)
@@ -157,10 +156,9 @@ def make_plots(R, od):
             continue
         plot_with_fill(a1, R[c]["coop"],       label=LB[c], color=CL[c], **ST[c])
         plot_with_fill(a2, R[c]["oracle_acc"], label=LB[c], color=CL[c], **ST[c])
-    a1.set(title="Cooperation Events",             xlabel="Episode", ylabel="Rate",     ylim=(-0.02, 0.5))
-    a2.set(title="Oracle Accuracy (Ground Truth)", xlabel="Episode", ylabel="Accuracy", ylim=(-0.02, 1.05))
+    a1.set(xlabel="Episode", ylabel="Cooperation Rate",  ylim=(-0.02, 0.5))
+    a2.set(xlabel="Episode", ylabel="Oracle Accuracy",   ylim=(-0.02, 1.05))
     a1.legend(fontsize=7); a2.legend(fontsize=7)
-    fig.suptitle("Fig 6: Cooperation & Truth vs Consensus (PPO)", fontsize=13, y=1.01)
     fig.tight_layout()
     for e in ["pdf", "png"]:
         fig.savefig(f"fig06_coop_oracle.{e}", format=e, bbox_inches="tight", dpi=300)
@@ -174,7 +172,7 @@ def make_plots(R, od):
         if c not in R:
             continue
         ax.plot(np.cumsum(np.mean(R[c]["reward"], axis=0)), label=LB[c], color=CL[c], **ST[c])
-    ax.set(title="Fig 7: Cumulative Reward (PPO)", xlabel="Episode", ylabel="Cum. Reward")
+    ax.set(xlabel="Episode", ylabel="Cumulative Reward")
     ax.ticklabel_format(axis='both', style='sci', scilimits=(0, 0), useMathText=True)
     ax.legend(framealpha=0.9)
     fig.tight_layout()
@@ -185,8 +183,7 @@ def make_plots(R, od):
 
     # Fig 8
     mx = max(np.mean(R[c]["res"], axis=0).max() for c in MC if c in R)
-    _curve(R, "res", "Fig 8: Resource Sustainability (PPO)", "Active Resources",
-           "fig08_resources", ylim=(0, mx * 1.2))
+    _curve(R, "res", "Active Resources", "fig08_resources", ylim=(0, mx * 1.2))
     n_saved += 1
 
     # Fig 9 — skip if no ablation data
@@ -207,8 +204,7 @@ def make_plots(R, od):
                    color=cm(i / max(len(keys) - 1, 1)),
                    edgecolor="white", linewidth=0.5)
         ax.set_xticks(x); ax.set_xticklabels(mls)
-        ax.set(ylabel=f"Rate (last {n_last} ep)",
-               title="Fig 9: Ablation — Punishment Profitability (PPO)")
+        ax.set(ylabel=f"Rate (last {n_last} ep)")
         ax.legend(fontsize=8, ncol=2)
         fig.tight_layout()
         for e in ["pdf", "png"]:
@@ -231,22 +227,20 @@ def make_plots(R, od):
         xp = np.arange(4)
         ev = [np.mean(ed[m][:, s]) for m in ms]
         cv = [np.mean(cd[m][:, s]) for m in ms]
-        axes[0].bar(xp - 0.17, ev, 0.32, label="Decentralised Peer Feedback",
+        axes[0].bar(xp - 0.17, ev, 0.32, label="DPF",
                     color="#5D3A9B", edgecolor="white")
-        axes[0].bar(xp + 0.17, cv, 0.32, label="Adversarial Coalition ([0,1])",
+        axes[0].bar(xp + 0.17, cv, 0.32, label="AC",
                     color="#D62728", edgecolor="white")
         axes[0].set_xticks(xp); axes[0].set_xticklabels(ls)
-        axes[0].set(title="Behavioral Rates", ylabel="Rate"); axes[0].legend(fontsize=8)
-        plot_with_fill(axes[1], ed["coop"], "Decentralised Peer Feedback", "#5D3A9B", lw=2.5)
-        plot_with_fill(axes[1], cd["coop"], "Adversarial Coalition",       "#D62728", lw=2, ls="--")
-        axes[1].set(title="Cooperation", xlabel="Episode", ylabel="Rate", ylim=(-0.02, 0.5))
+        axes[0].set(ylabel="Rate"); axes[0].legend(fontsize=8)
+        plot_with_fill(axes[1], ed["coop"], "DPF", "#5D3A9B", lw=2.5)
+        plot_with_fill(axes[1], cd["coop"], "AC",  "#D62728", lw=2, ls="--")
+        axes[1].set(xlabel="Episode", ylabel="Cooperation Rate", ylim=(-0.02, 0.5))
         axes[1].legend(fontsize=8)
-        plot_with_fill(axes[2], ed["oracle_acc"], "Decentralised Peer Feedback", "#5D3A9B", lw=2.5)
-        plot_with_fill(axes[2], cd["oracle_acc"], "Adversarial Coalition",       "#D62728", lw=2, ls="--")
-        axes[2].set(title="Oracle Accuracy", xlabel="Episode", ylabel="Accuracy", ylim=(-0.02, 1.05))
+        plot_with_fill(axes[2], ed["oracle_acc"], "DPF", "#5D3A9B", lw=2.5)
+        plot_with_fill(axes[2], cd["oracle_acc"], "AC",  "#D62728", lw=2, ls="--")
+        axes[2].set(xlabel="Episode", ylabel="Oracle Accuracy", ylim=(-0.02, 1.05))
         axes[2].legend(fontsize=8)
-        fig.suptitle("Fig 10: Adversarial Coalition Robustness (PPO, Cartel = Agents 0,1)",
-                     fontsize=13, y=1.02)
         fig.tight_layout()
         for e in ["pdf", "png"]:
             fig.savefig(f"fig10_collusion.{e}", format=e, bbox_inches="tight", dpi=300)
